@@ -1,0 +1,57 @@
+# Auto detect text files and normalize line endings to LF
+* text=auto eol=lf
+
+# Source code
+*.rs text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+
+# Configuration files
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows scripts
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Documentation
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+
+# Git config
+.gitattributes text eol=lf
+.gitignore text eol=lf
+.gitmodules text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.7z binary
+*.so binary
+*.dylib binary
+*.dll binary
+*.exe binary
+*.a binary
+
+# Archives
+*.tar.gz binary
+*.tgz binary
+
+# Rust binary outputs
+*.rlib binary

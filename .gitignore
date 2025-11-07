@@ -1,0 +1,26 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# cargo-dist
+/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*~
+
+# Logs
+*.log
+
+# Profiling
+flamegraph.svg
+perf.data
+
+# Internal
+.internal/
