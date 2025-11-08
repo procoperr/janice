@@ -2,9 +2,10 @@
 
 use crate::hash::{ContentHash, Hasher};
 use crate::io::{copy_file_with_metadata, remove_file_safe};
+use ahash::{HashMap, HashMapExt};
 use anyhow::Result;
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -232,13 +233,13 @@ pub fn diff_scans(source: &ScanResult, dest: &ScanResult) -> Result<DiffResult> 
     let mut source_by_hash: HashMap<&ContentHash, Vec<&FileMeta>> =
         HashMap::with_capacity(source.files.len());
     for file in &source.files {
-        source_by_hash.entry(&file.hash).or_default().push(file);
+        source_by_hash.entry(&file.hash).or_insert_with(|| Vec::with_capacity(2)).push(file);
     }
 
     let mut dest_by_hash: HashMap<&ContentHash, Vec<&FileMeta>> =
         HashMap::with_capacity(dest.files.len());
     for file in &dest.files {
-        dest_by_hash.entry(&file.hash).or_default().push(file);
+        dest_by_hash.entry(&file.hash).or_insert_with(|| Vec::with_capacity(2)).push(file);
     }
 
     let mut added = Vec::with_capacity(source.files.len() / 10);
@@ -298,21 +299,21 @@ pub fn diff_scans(source: &ScanResult, dest: &ScanResult) -> Result<DiffResult> 
 
 /// Compute path similarity score between two paths (0.0 to 1.0)
 ///
-/// Uses a simple token-based approach: compares path components and filenames.
-/// Higher score indicates more similar paths.
+/// Uses Damerau-Levenshtein distance for accurate rename detection.
+/// Handles typos, case changes, and partial renames correctly.
 fn path_similarity(path1: &Path, path2: &Path) -> f64 {
     let name1 = path1.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let name2 = path2.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-    // Exact filename match is a strong signal
-    if name1 == name2 {
-        return 0.9;
+    // Exact filename match (case-insensitive)
+    if name1.eq_ignore_ascii_case(name2) {
+        return 0.95;
     }
 
-    // Compute simple string similarity for filenames
-    let filename_sim = simple_string_similarity(name1, name2);
+    // Use Damerau-Levenshtein for filename similarity
+    let filename_sim = strsim::normalized_damerau_levenshtein(name1, name2);
 
-    // Also consider directory similarity
+    // Directory similarity (keep Jaccard for speed)
     let dir1 = path1.parent().map(|p| p.to_string_lossy());
     let dir2 = path2.parent().map(|p| p.to_string_lossy());
 
@@ -439,16 +440,17 @@ mod tests {
 
     #[test]
     fn test_path_similarity() {
-        // Exact filename match
+        // Exact filename match (case-insensitive with Levenshtein)
         let p1 = Path::new("dir1/file.txt");
         let p2 = Path::new("dir2/file.txt");
-        assert!(path_similarity(p1, p2) > 0.8);
+        assert!(path_similarity(p1, p2) > 0.9); // Case-insensitive exact match returns 0.95
 
         // Different files in same directory (directory similarity pulls score up)
         let p1 = Path::new("dir/foo.txt");
         let p2 = Path::new("dir/bar.txt");
-        assert!(path_similarity(p1, p2) > 0.3); // Same dir boosts similarity
-        assert!(path_similarity(p1, p2) < 0.7); // But still not very similar
+        let score = path_similarity(p1, p2);
+        assert!(score > 0.3); // Same dir boosts similarity
+        assert!(score < 0.75); // But still not very similar (Levenshtein gives ~0.7)
     }
 
     #[test]

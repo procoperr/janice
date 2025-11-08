@@ -41,7 +41,7 @@ Example:
 jan ~/stuff /mnt/backup/stuff -qdy
 ```
 
-Runs nightly, never speaks, never complains. A role model. Wish you could say the same about yourself huh.
+Runs nightly, never speaks, never complains. A role model. Jealous yet?
 
 ## How it works
 
@@ -57,4 +57,4 @@ Hashes everything, compares fingerprints, moves what's moved, copies what's new,
 
 ## License
 
-MIT. Do whatever. Couldn't care.
+MIT. Do whatever. Couldn't care. Godspeed.

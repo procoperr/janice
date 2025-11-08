@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
+use owo_colors::OwoColorize;
 use std::path::PathBuf;
 use std::process;
+use std::time::Instant;
 
 use janice::{diff_scans, scan_directory, sync_changes, SyncOptions};
 
@@ -45,7 +47,7 @@ struct Cli {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("Error: {e:#}");
+        eprintln!("{} {e:#}", "Error:".red());
         process::exit(1);
     }
 }
@@ -126,6 +128,7 @@ fn run() -> Result<()> {
     }
 
     // Sync
+    let start_time = Instant::now();
     sync_changes(
         &cli.source,
         &cli.dest,
@@ -136,13 +139,41 @@ fn run() -> Result<()> {
             verify_after_copy: false,
         },
     )?;
+    let elapsed = start_time.elapsed();
 
     if !cli.quiet {
+        let copied_bytes: u64 = diff.added.iter().map(|f| f.size).sum::<u64>()
+            + diff.modified.iter().map(|f| f.size).sum::<u64>();
         let renamed_bytes: u64 = diff.renamed.iter().map(|(old, _)| old.size).sum();
-        if renamed_bytes > 0 {
-            println!("Done. {} saved via renames", format_bytes(renamed_bytes));
+        let total_bytes = copied_bytes + renamed_bytes;
+
+        if total_bytes > 0 {
+            let bytes_per_sec = if elapsed.as_secs_f64() > 0.0 {
+                copied_bytes as f64 / elapsed.as_secs_f64()
+            } else {
+                0.0
+            };
+
+            if renamed_bytes > 0 {
+                println!(
+                    "{} {} copied, {} renamed in {:.2}s ({}/s)",
+                    "Done.".green().bold(),
+                    format_bytes(copied_bytes),
+                    format_bytes(renamed_bytes),
+                    elapsed.as_secs_f64(),
+                    format_bytes(bytes_per_sec as u64)
+                );
+            } else {
+                println!(
+                    "{} {} copied in {:.2}s ({}/s)",
+                    "Done.".green().bold(),
+                    format_bytes(copied_bytes),
+                    elapsed.as_secs_f64(),
+                    format_bytes(bytes_per_sec as u64)
+                );
+            }
         } else {
-            println!("Done");
+            println!("{}", "Done".green());
         }
     }
 
@@ -170,16 +201,16 @@ fn print_diff_summary(diff: &janice::DiffResult, delete: bool, verbose: bool) {
     let mut parts = Vec::new();
 
     if !diff.added.is_empty() {
-        parts.push(format!("{} new", diff.added.len()));
+        parts.push(format!("{} new", diff.added.len()).green().to_string());
     }
     if !diff.modified.is_empty() {
-        parts.push(format!("{} modified", diff.modified.len()));
+        parts.push(format!("{} modified", diff.modified.len()).yellow().to_string());
     }
     if !diff.renamed.is_empty() {
-        parts.push(format!("{} renamed", diff.renamed.len()));
+        parts.push(format!("{} renamed", diff.renamed.len()).cyan().to_string());
     }
     if delete && !diff.removed.is_empty() {
-        parts.push(format!("{} deleted", diff.removed.len()));
+        parts.push(format!("{} deleted", diff.removed.len()).red().to_string());
     }
 
     println!("{}", parts.join(", "));
