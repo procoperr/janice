@@ -30,6 +30,7 @@ Useful flags:
 -n  dry run (trust issues)
 -d  delete files in DEST that aren't in SOURCE
 -y  don't ask questions
+-e  skip junk
 -j N  threads (more threads, more fan noise)
 -q  silence
 -v  the opposite of silence
