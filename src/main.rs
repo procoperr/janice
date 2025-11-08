@@ -138,7 +138,12 @@ fn run() -> Result<()> {
     )?;
 
     if !cli.quiet {
-        println!("Done");
+        let renamed_bytes: u64 = diff.renamed.iter().map(|(old, _)| old.size).sum();
+        if renamed_bytes > 0 {
+            println!("Done. {} saved via renames", format_bytes(renamed_bytes));
+        } else {
+            println!("Done");
+        }
     }
 
     Ok(())
