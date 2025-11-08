@@ -3,8 +3,9 @@
 //! These benchmarks measure the throughput of content hashing operations
 //! across different file sizes to characterize performance.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use janice::hash::{hash_bytes, Hasher};
+use std::hint::black_box;
 use std::io::Write;
 use tempfile::NamedTempFile;
 

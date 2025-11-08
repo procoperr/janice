@@ -9,9 +9,6 @@ use thiserror::Error;
 // 256KB: optimal for modern SSD throughput
 const COPY_BUFFER_SIZE: usize = 256 * 1024;
 
-#[allow(dead_code)]
-const MAX_RETRY_ATTEMPTS: u32 = 3;
-
 /// Errors that can occur during I/O operations
 #[derive(Error, Debug)]
 pub enum IoError {

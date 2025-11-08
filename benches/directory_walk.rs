@@ -3,8 +3,9 @@
 //! These benchmarks measure the throughput of directory traversal operations
 //! to characterize the performance of the ignore crate-based walker.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::fs;
+use std::hint::black_box;
 use tempfile::TempDir;
 
 /// Helper to create a directory structure with many files
