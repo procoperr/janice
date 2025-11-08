@@ -6,6 +6,9 @@ rust-version = "1.75"
 license = "MIT"
 description = "A file sync tool that refuses to waste your time"
 repository = "https://github.com/procoperr/janice"
+readme = "README.md"
+keywords = ["sync", "backup", "file-sync", "blake3", "rsync"]
+categories = ["command-line-utilities", "filesystem"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
