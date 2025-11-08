@@ -5,7 +5,8 @@ pub mod hash;
 pub mod io;
 
 pub use core::{
-    diff_scans, scan_directory, sync_changes, DiffResult, FileMeta, ScanResult, SyncOptions,
+    diff_scans, scan_directory, scan_directory_with_excludes, sync_changes, DiffResult, FileMeta,
+    ScanResult, SyncOptions,
 };
 pub use hash::{hash_bytes, hash_file, ContentHash, Hasher};
 

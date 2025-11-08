@@ -105,6 +105,7 @@ impl Default for SyncOptions {
 /// # Arguments
 ///
 /// * `root` - Root directory to scan
+/// * `exclude_patterns` - Optional glob patterns to exclude from scan
 ///
 /// # Performance
 ///
@@ -113,6 +114,14 @@ impl Default for SyncOptions {
 /// - Streaming hash computation for constant memory usage
 /// - Respects .gitignore patterns for efficiency
 pub fn scan_directory(root: &Path) -> Result<ScanResult> {
+    scan_directory_with_excludes(root, &[])
+}
+
+/// Scan a directory with custom exclude patterns
+pub fn scan_directory_with_excludes(
+    root: &Path,
+    exclude_patterns: &[String],
+) -> Result<ScanResult> {
     if !root.exists() {
         return Err(SyncError::InvalidPath(format!(
             "Directory does not exist: {}",
@@ -121,12 +130,25 @@ pub fn scan_directory(root: &Path) -> Result<ScanResult> {
         .into());
     }
 
-    let walker = ignore::WalkBuilder::new(root)
+    let mut builder = ignore::WalkBuilder::new(root);
+    builder
         .hidden(false)
         .git_ignore(true)
         .git_exclude(true)
-        .threads(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1))
-        .build_parallel();
+        .threads(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1));
+
+    // Add custom exclude patterns
+    let mut override_builder = ignore::overrides::OverrideBuilder::new(root);
+    for pattern in exclude_patterns {
+        override_builder.add(&format!("!{}", pattern)).map_err(|e| {
+            SyncError::InvalidPath(format!("Invalid exclude pattern '{}': {}", pattern, e))
+        })?;
+    }
+    if let Ok(overrides) = override_builder.build() {
+        builder.overrides(overrides);
+    }
+
+    let walker = builder.build_parallel();
 
     let files = std::sync::Mutex::new(Vec::with_capacity(1024));
 
@@ -233,13 +255,19 @@ pub fn diff_scans(source: &ScanResult, dest: &ScanResult) -> Result<DiffResult> 
     let mut source_by_hash: HashMap<&ContentHash, Vec<&FileMeta>> =
         HashMap::with_capacity(source.files.len());
     for file in &source.files {
-        source_by_hash.entry(&file.hash).or_insert_with(|| Vec::with_capacity(2)).push(file);
+        source_by_hash
+            .entry(&file.hash)
+            .or_insert_with(|| Vec::with_capacity(2))
+            .push(file);
     }
 
     let mut dest_by_hash: HashMap<&ContentHash, Vec<&FileMeta>> =
         HashMap::with_capacity(dest.files.len());
     for file in &dest.files {
-        dest_by_hash.entry(&file.hash).or_insert_with(|| Vec::with_capacity(2)).push(file);
+        dest_by_hash
+            .entry(&file.hash)
+            .or_insert_with(|| Vec::with_capacity(2))
+            .push(file);
     }
 
     let mut added = Vec::with_capacity(source.files.len() / 10);

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process;
 use std::time::Instant;
 
-use janice::{diff_scans, scan_directory, sync_changes, SyncOptions};
+use janice::{diff_scans, scan_directory_with_excludes, sync_changes, SyncOptions};
 
 #[derive(Parser)]
 #[command(
@@ -29,7 +29,7 @@ struct Cli {
     delete: bool,
 
     /// Skip confirmation prompt
-    #[arg(short = 'y')]
+    #[arg(short, long)]
     yes: bool,
 
     /// Quiet mode (no progress)
@@ -41,8 +41,12 @@ struct Cli {
     verbose: bool,
 
     /// Number of threads (default: CPU count)
-    #[arg(short = 'j', long)]
+    #[arg(short = 'j', long, value_name = "THREADS")]
     threads: Option<usize>,
+
+    /// Exclude files matching glob patterns (can be used multiple times)
+    #[arg(short, long, value_name = "PATTERN")]
+    exclude: Vec<String>,
 }
 
 fn main() {
@@ -75,7 +79,7 @@ fn run() -> Result<()> {
     if cli.verbose && !cli.quiet {
         println!("Scanning: {}", cli.source.display());
     }
-    let src = scan_directory(&cli.source)?;
+    let src = scan_directory_with_excludes(&cli.source, &cli.exclude)?;
 
     if cli.verbose && !cli.quiet {
         println!("{} files, {}", src.files.len(), format_bytes(src.total_size()));
@@ -85,7 +89,7 @@ fn run() -> Result<()> {
     if cli.verbose && !cli.quiet {
         println!("Scanning: {}", cli.dest.display());
     }
-    let dst = scan_directory(&cli.dest)?;
+    let dst = scan_directory_with_excludes(&cli.dest, &cli.exclude)?;
 
     if cli.verbose && !cli.quiet {
         println!("{} files, {}", dst.files.len(), format_bytes(dst.total_size()));

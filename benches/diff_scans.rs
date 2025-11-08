@@ -176,11 +176,7 @@ fn create_mixed_scans(file_count: usize) -> (ScanResult, ScanResult) {
 fn bench_diff_scans_scale(c: &mut Criterion) {
     let mut group = c.benchmark_group("diff_scans_scale");
 
-    let file_counts = vec![
-        ("100_files", 100),
-        ("1000_files", 1000),
-        ("10000_files", 10000),
-    ];
+    let file_counts = vec![("100_files", 100), ("1000_files", 1000), ("10000_files", 10000)];
 
     for (name, count) in file_counts {
         let (source, dest) = create_identical_scans(count);
@@ -298,4 +294,3 @@ criterion_group!(
     bench_diff_scans_mixed
 );
 criterion_main!(benches);
-
