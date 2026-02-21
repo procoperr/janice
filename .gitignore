@@ -21,6 +21,3 @@ Thumbs.db
 # Profiling
 flamegraph.svg
 perf.data
-
-# Internal
-.internal/

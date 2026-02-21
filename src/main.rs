@@ -47,6 +47,10 @@ struct Cli {
     /// Exclude files matching glob patterns (can be used multiple times)
     #[arg(short, long, value_name = "PATTERN")]
     exclude: Vec<String>,
+
+    /// Verify file integrity after copying (BLAKE3 hash check)
+    #[arg(long)]
+    verify: bool,
 }
 
 fn main() {
@@ -140,7 +144,7 @@ fn run() -> Result<()> {
         &SyncOptions {
             delete_removed: cli.delete,
             preserve_timestamps: true,
-            verify_after_copy: false,
+            verify_after_copy: cli.verify,
         },
     )?;
     let elapsed = start_time.elapsed();

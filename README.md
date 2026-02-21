@@ -34,6 +34,7 @@ Useful flags:
 -j N  threads (more threads, more fan noise)
 -q  silence
 -v  the opposite of silence
+--verify  check copies with BLAKE3 (paranoia mode)
 ```
 
 Example:
@@ -50,11 +51,11 @@ Hashes everything, compares fingerprints, moves what's moved, copies what's new,
 
 ## Planned
 
+* [x] **Atomic apply** (no half-synced nightmare states)
+* [x] **BLAKE3 verification** (trust, but *actually* verify)
 * [ ] **Robust delta engine** (rsync-style rolling + content-defined chunking)
 * [ ] **Native SSH transport** (no more mount workarounds)
 * [ ] **Resumable transfers** (interruption is not failure)
-* [ ] **Atomic apply** (no half-synced nightmare states)
-* [ ] **Merkle/BLAKE3 verification** (trust, but *actually* verify)
 
 ## License
 

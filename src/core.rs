@@ -1,7 +1,10 @@
 //! Core synchronization logic for scanning, diffing, and syncing directories.
 
 use crate::hash::{ContentHash, Hasher};
-use crate::io::{copy_file_with_metadata, remove_file_safe};
+use crate::io::{
+    atomic_copy_file_with_metadata, fsync_directory, generate_temp_path, remove_file_safe,
+    SyncJournal, JAN_JOURNAL_FILE, JAN_TEMP_DIR,
+};
 use ahash::{HashMap, HashMapExt};
 use anyhow::Result;
 use rayon::prelude::*;
@@ -144,6 +147,15 @@ pub fn scan_directory_with_excludes(
             SyncError::InvalidPath(format!("Invalid exclude pattern '{}': {}", pattern, e))
         })?;
     }
+
+    // Auto-exclude Janice internal files
+    override_builder
+        .add(&format!("!{JAN_TEMP_DIR}"))
+        .map_err(|e| SyncError::InvalidPath(format!("Internal exclude failed: {e}")))?;
+    override_builder
+        .add(&format!("!{JAN_JOURNAL_FILE}"))
+        .map_err(|e| SyncError::InvalidPath(format!("Internal exclude failed: {e}")))?;
+
     if let Ok(overrides) = override_builder.build() {
         builder.overrides(overrides);
     }
@@ -381,10 +393,9 @@ fn simple_string_similarity(s1: &str, s2: &str) -> f64 {
 
 /// Synchronize changes from source to destination based on diff results
 ///
-/// This function applies the changes identified in a diff:
-/// - Copies new and modified files
-/// - Handles renames (moves files if possible, copies otherwise)
-/// - Optionally deletes removed files
+/// Uses atomic file operations (write-to-temp, fsync, rename) to ensure
+/// the destination is never left in a corrupted state. A journal tracks
+/// in-progress operations for crash recovery.
 ///
 /// # Arguments
 ///
@@ -398,66 +409,153 @@ pub fn sync_changes(
     diff: &DiffResult,
     options: &SyncOptions,
 ) -> Result<()> {
+    let temp_dir = dest_root.join(JAN_TEMP_DIR);
+    let journal_path = dest_root.join(JAN_JOURNAL_FILE);
+
+    // Recover from any prior interrupted sync
+    SyncJournal::recover(&journal_path, &temp_dir)
+        .map_err(|e| anyhow::anyhow!("Journal recovery failed: {e}"))?;
+
+    fs::create_dir_all(&temp_dir)
+        .map_err(|e| anyhow::anyhow!("Can't create {}: {}", temp_dir.display(), e))?;
+
+    let journal = SyncJournal::create(journal_path)
+        .map_err(|e| anyhow::anyhow!("Can't create journal: {e}"))?;
+
+    // Track directories that were written to for batch dir fsync
+    let written_dirs: std::sync::Mutex<HashSet<PathBuf>> = std::sync::Mutex::new(HashSet::new());
+
+    // Copy added + modified files
     let files_to_copy: Vec<&FileMeta> = diff.added.iter().chain(diff.modified.iter()).collect();
 
-    files_to_copy.par_iter().try_for_each(|file| {
+    let copy_result = files_to_copy.par_iter().try_for_each(|file| {
         let source_path = source_root.join(&file.path);
         let dest_path = dest_root.join(&file.path);
 
         if let Some(parent) = dest_path.parent() {
             fs::create_dir_all(parent)
                 .map_err(|e| anyhow::anyhow!("Can't create {}: {}", parent.display(), e))?;
+            written_dirs.lock().unwrap().insert(parent.to_path_buf());
         }
 
-        copy_file_with_metadata(&source_path, &dest_path, options.preserve_timestamps).map_err(
-            |e| {
-                anyhow::anyhow!(
-                    "Copy failed ({} -> {}): {}",
-                    source_path.display(),
-                    dest_path.display(),
-                    e
-                )
-            },
-        )?;
+        let temp_path = generate_temp_path(&temp_dir);
+        journal
+            .record_pending("COPY", &temp_path, &dest_path)
+            .map_err(|e| anyhow::anyhow!("Journal write failed: {e}"))?;
+
+        let expected_hash = if options.verify_after_copy {
+            Some(&file.hash)
+        } else {
+            None
+        };
+
+        atomic_copy_file_with_metadata(
+            &source_path,
+            &dest_path,
+            &temp_path,
+            options.preserve_timestamps,
+            options.verify_after_copy,
+            expected_hash,
+        )
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Copy failed ({} -> {}): {e}",
+                source_path.display(),
+                dest_path.display(),
+            )
+        })?;
+
+        journal
+            .record_committed("COPY", &temp_path, &dest_path)
+            .map_err(|e| anyhow::anyhow!("Journal write failed: {e}"))?;
 
         Ok::<_, anyhow::Error>(())
-    })?;
+    });
 
-    // Renames: copy to new location, remove old
-    diff.renamed.par_iter().try_for_each(|(old, new)| {
+    if let Err(e) = copy_result {
+        let _ = journal.remove();
+        let _ = fs::remove_dir_all(&temp_dir);
+        return Err(e);
+    }
+
+    // Renames: atomic copy to new location, remove old
+    let rename_result = diff.renamed.par_iter().try_for_each(|(old, new)| {
         let source_path = source_root.join(&new.path);
         let dest_path = dest_root.join(&new.path);
 
         if let Some(parent) = dest_path.parent() {
             fs::create_dir_all(parent)
                 .map_err(|e| anyhow::anyhow!("Can't create {}: {}", parent.display(), e))?;
+            written_dirs.lock().unwrap().insert(parent.to_path_buf());
         }
 
-        copy_file_with_metadata(&source_path, &dest_path, options.preserve_timestamps).map_err(
-            |e| {
-                anyhow::anyhow!(
-                    "Rename failed ({} -> {}): {}",
-                    source_path.display(),
-                    dest_path.display(),
-                    e
-                )
-            },
-        )?;
+        let temp_path = generate_temp_path(&temp_dir);
+        journal
+            .record_pending("RENAME", &temp_path, &dest_path)
+            .map_err(|e| anyhow::anyhow!("Journal write failed: {e}"))?;
+
+        let expected_hash = if options.verify_after_copy {
+            Some(&new.hash)
+        } else {
+            None
+        };
+
+        atomic_copy_file_with_metadata(
+            &source_path,
+            &dest_path,
+            &temp_path,
+            options.preserve_timestamps,
+            options.verify_after_copy,
+            expected_hash,
+        )
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Rename failed ({} -> {}): {e}",
+                source_path.display(),
+                dest_path.display(),
+            )
+        })?;
 
         let old_dest_path = dest_root.join(&old.path);
         remove_file_safe(&old_dest_path)
             .map_err(|e| anyhow::anyhow!("Can't remove {}: {}", old_dest_path.display(), e))?;
 
-        Ok::<_, anyhow::Error>(())
-    })?;
+        journal
+            .record_committed("RENAME", &temp_path, &dest_path)
+            .map_err(|e| anyhow::anyhow!("Journal write failed: {e}"))?;
 
+        Ok::<_, anyhow::Error>(())
+    });
+
+    if let Err(e) = rename_result {
+        let _ = journal.remove();
+        let _ = fs::remove_dir_all(&temp_dir);
+        return Err(e);
+    }
+
+    // Deletes
     if options.delete_removed {
         for file in &diff.removed {
             let dest_path = dest_root.join(&file.path);
             remove_file_safe(&dest_path)
                 .map_err(|e| anyhow::anyhow!("Can't delete {}: {}", dest_path.display(), e))?;
+            if let Some(parent) = dest_path.parent() {
+                written_dirs.lock().unwrap().insert(parent.to_path_buf());
+            }
         }
     }
+
+    // Batch directory fsync — persist all renames
+    let dirs = written_dirs.into_inner().unwrap();
+    for dir in &dirs {
+        if let Err(e) = fsync_directory(dir) {
+            eprintln!("Warning: directory fsync failed for {}: {e}", dir.display());
+        }
+    }
+
+    // Clean exit
+    let _ = journal.remove();
+    let _ = fs::remove_dir_all(&temp_dir);
 
     Ok(())
 }
