@@ -9,5 +9,9 @@ pub use core::{
     ScanResult, SyncOptions,
 };
 pub use hash::{hash_bytes, hash_file, ContentHash, Hasher};
+pub use io::{
+    atomic_copy_file_with_metadata, fsync_directory, generate_temp_path, AtomicWriter, SyncJournal,
+    JAN_JOURNAL_FILE, JAN_TEMP_DIR,
+};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
