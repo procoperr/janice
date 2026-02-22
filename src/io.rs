@@ -394,9 +394,13 @@ pub fn atomic_copy_file_with_metadata(
 }
 
 /// Flush directory metadata to disk (ensures renames are persisted).
+///
+/// No-op on Windows where directory fsync is not supported.
 pub fn fsync_directory(path: &Path) -> io::Result<()> {
-    let dir = File::open(path)?;
-    dir.sync_all()?;
+    #[cfg(unix)]
+    File::open(path)?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = path;
     Ok(())
 }
 
